@@ -1,0 +1,69 @@
+---
+# Common
+- hosts: all
+  become: yes
+  tasks:
+  - name: Install EPEL repo
+    yum: name=epel-release update_cache=yes
+  - name: set hostname
+    template: src=/home/vagrant/sync/files/hostname.j2 dest=/etc/hostname owner=root group=root mode=0644
+
+# Controller
+- hosts: node3
+  become: yes
+  tasks:
+  - name: Install Go lang
+    yum: name=golang
+  
+    # we could get the source from git, add a cronjob and git hook to trigger this
+    # but let's not over-do it, if there is new code for app.go here, a simple Makefile will do
+  - name: Rebuild App
+    command: make
+    args:
+      chdir: /home/vagrant/sync/files
+
+  - name: Install NGINX
+    yum: name=nginx
+  
+  - name: Install start service script
+    copy: src=/home/vagrant/sync/files/nginx.service dest=/usr/lib/systemd/system/nginx.service
+  
+  - name: Setup NGINX (basic round-robin proxy)
+    copy: src=/home/vagrant/sync/files/nginx.conf dest=/etc/nginx/nginx.conf
+    notify:
+      - restart nginx
+
+  - name: Allow NGINX to connect to non standard port
+    command: setsebool -P httpd_can_network_connect 1
+
+  - name: Start the NGINX service
+    service: name=nginx state=started enabled=yes
+
+  handlers:
+    - name: restart nginx
+      service: name=nginx state=restarted
+
+# All other nodes
+- hosts: nodes
+  remote_user: vagrant
+  tasks:
+  - name: Copy GO app
+    copy: src=/home/vagrant/sync/files/app 
+          dest=/home/vagrant/app
+          owner=vagrant group=vagrant mode=0700
+    notify:
+      - restart app
+
+  - name: Install App service script
+    become: yes
+    copy: src=/home/vagrant/sync/files/app.service
+          dest=/usr/lib/systemd/system/app.service
+
+  - name: Start the app service
+    become: yes
+    service: name=app state=started enabled=yes
+
+  handlers:
+    - name: restart app
+      become: yes
+      service: name=app state=restarted

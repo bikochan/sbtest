@@ -1,0 +1,9 @@
+[Unit]
+Description=App Service
+
+[Service]
+Type=simple
+ExecStart=/home/vagrant/app
+
+[Install]
+WantedBy=multi-user.target
